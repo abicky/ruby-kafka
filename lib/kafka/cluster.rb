@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "kafka/broker_pool"
+require "resolv"
 require "set"
 
 module Kafka
@@ -420,30 +421,34 @@ module Kafka
       errors = []
 
       @seed_brokers.shuffle.each do |node|
-        @logger.info "Fetching cluster metadata from #{node}"
+        Resolv.getaddresses(node.hostname).select { |ip| ip =~ Resolv::IPv4::Regex }.shuffle.each do |ip|
+          node_info = node.to_s
+          node_info << " (#{ip})" if node.hostname != ip
+          @logger.info "Fetching cluster metadata from #{node_info}"
 
-        begin
-          broker = @broker_pool.connect(node.hostname, node.port)
-          cluster_info = broker.fetch_metadata(topics: @target_topics)
+          begin
+            broker = @broker_pool.connect(ip, node.port)
+            cluster_info = broker.fetch_metadata(topics: @target_topics)
 
-          if cluster_info.brokers.empty?
-            @logger.error "No brokers in cluster"
-          else
-            @logger.info "Discovered cluster metadata; nodes: #{cluster_info.brokers.join(', ')}"
+            if cluster_info.brokers.empty?
+              @logger.error "No brokers in cluster"
+            else
+              @logger.info "Discovered cluster metadata; nodes: #{cluster_info.brokers.join(', ')}"
 
-            @stale = false
+              @stale = false
 
-            return cluster_info
+              return cluster_info
+            end
+          rescue Error => e
+            @logger.error "Failed to fetch metadata from #{node_info}: #{e}"
+            errors << [node_info, e]
+          ensure
+            broker.disconnect unless broker.nil?
           end
-        rescue Error => e
-          @logger.error "Failed to fetch metadata from #{node}: #{e}"
-          errors << [node, e]
-        ensure
-          broker.disconnect unless broker.nil?
         end
       end
 
-      error_description = errors.map {|node, exception| "- #{node}: #{exception}" }.join("\n")
+      error_description = errors.map {|node_info, exception| "- #{node_info}: #{exception}" }.join("\n")
 
       raise ConnectionError, "Could not connect to any of the seed brokers:\n#{error_description}"
     end

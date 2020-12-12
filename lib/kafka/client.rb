@@ -24,6 +24,8 @@ module Kafka
     #   the client. Either an Array of connections, or a comma separated string of connections.
     #   A connection can either be a string of "host:port" or a full URI with a scheme.
     #   If there's a scheme it's ignored and only host/port are used.
+    #   If a hostname has multiple IP addresses, the client tries to connect each address until
+    #   it can connect one.
     #
     # @param client_id [String] the identifier for this application.
     #

@@ -14,6 +14,7 @@ describe Kafka::Cluster do
 
   describe "#get_leader" do
     before do
+      allow(Resolv).to receive(:getaddresses) { ["127.0.0.1"] }
       allow(broker_pool).to receive(:connect) { broker }
       allow(broker).to receive(:disconnect)
     end
